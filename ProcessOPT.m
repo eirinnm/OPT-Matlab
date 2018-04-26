@@ -41,60 +41,57 @@ h = waitbar(0.33,'Loading video...');
 videodata = read(VideoReader([VideoPath,VideoName]));
 close(h);
 % background = imread('background2018-02-23T16_38_32.bmp');
-background = imread('background2018-03-06T17_46_17.bmp');
+background = imread('background2018-04-12T17_33_59.bmp');
+% background_frames = read(VideoReader([VideoPath,VideoName]));
 % b = imread('background2018-02-23T16_38_32.bmp');
 % subtract the background. This will invert the brightness too
 videodata = (background - videodata);
 
 % clip the video to what I think are the best start and stop frames for
 % this machine
-video = videodata(:,:,:,10:379);
+video = videodata(:,:,:,1:358);
 numslices = size(video,1);
 image_width = size(video,2);
 numchannels = size(video,3);
 numframes = size(video,4);
 clear videodata
 f = figure;
-%% Find the capillary walls
-
-% vid_data = squeeze(video(:,:,2,:)); % grab one channel for this bit
-% [~, maxslice] = max(sum(vid_data(100:end-200,100:end-100,1),2)); % find a good slice for later presentation 
-
-
-
-% Fit the capillary to a sine curve and find the vertical offset 
-% sino = double(squeeze(vid_data(1,:,:)))';
-
-% 
-% cap_mid = mean(cap_peak_points,2);
-% [fitted, offset] = fit_sine(cap_mid);
-% 
-% vertical_adjustment = mean(fitted) - image_width/2;
-% offset = offset - vertical_adjustment;
-% cap_width = nanmedian(diff(cap_peak_points,1,2));
-% cap_ideal_walls = [fitted - cap_width/2, fitted+cap_width/2];
-% fprintf('Sinogram offset is %0.2f pixels\n',vertical_adjustment);
-% subplot(2,2,2);
-% imagesc(sino);
-% hold on
-% plot(cap_peak_points,'--', 'LineWidth',2,'Color','red');
-% plot(cap_mid,'--', 'LineWidth',3,'Color','red');
-% plot(fitted, '-', 'LineWidth',1,'Color','green');
-% % plot(cap_mid+offset, '-', 'LineWidth',1,'Color','yellow');
-% plot(cap_ideal_walls, '-','LineWidth',1,'Color','green');
-% title('Capillary walls with sine fitting');
-% hold off
-% % clear vid_data
-
-%% average every row, per frame, to make a blended sinogram
+%% How long is the revolution?
+% for f = 1:size(video,4)
+    
+%% Find capillary walls
+[edges, cap_width_scalefactor] = find_cap_walls(squeeze(video(:,:,2,:)));
+%% Resize the video
+% vid_resized = squeeze(video(:,:,2,:));
+h=waitbar(0,'Resizing video...');
+image_width = size(video,2);
+image_height = size(video,1);
+for framenum = 1:numframes
+    I = video(:,:,:,framenum);
+    newwidth =image_width*(cap_width_scalefactor(framenum)*-1+1);
+    offset_to_center = round((image_width - newwidth)/2);
+    Ir = imresize(I,[image_height newwidth]);
+    Ir = imtranslate(Ir,[offset_to_center 0]);
+    newwidth_int = floor(newwidth);
+    if newwidth_int<image_width
+        Ir = Ir(1:image_height,1:newwidth_int,:);
+        video(:,1:newwidth_int,:,framenum) = Ir;
+    else
+        Ir = Ir(1:image_height,1:image_width,:);
+        video(:,:,:,framenum) = Ir;
+    end
+    waitbar(framenum/numframes,h);
+end
+close(h);
+%% 
 subplot(2,2,1);
 imagesc(video(:,:,2,1));
 title('Frame 1');
-
 scanzones = squeeze(mean(video(:,:,2,:),1));
 subplot(2,2,2);
 imagesc(scanzones');
 title("Average sinogram");
+
 % for each consecutive frame, find the lateral movement that minimizes the
 % difference (least squares)
 shift_by = stabilize_capillary(scanzones);
@@ -137,37 +134,39 @@ end
 %crop the video to the stabilized region
 video = video(:,crop_left:crop_right,:,:);
 close(h);
-% offset the found capillary walls by the same amount
-% cap_peak_points_fixed = cap_peak_points+shift_by;
-% edges = round(nanmean(cap_peak_points_fixed));  
-% these edges will be used to crop and centre the sinogram prior to reconstruction
+
 %% Find walls
-capillary_endpoints = find_hough_points(squeeze(video(:,:,2,:)));
+[edges, cap_width_scalefactor] = find_cap_walls(squeeze(video(:,:,2,:)));
+% these edges will be used to crop and centre the sinogram prior to
+% reconstruction
+break
+%%
+% capillary_endpoints = find_hough_points(squeeze(video(:,:,2,:)));
+% 
+% % draw the found capillary walls
+% found_walls = capillary_endpoints(capillary_endpoints(:,3)==1,1:2);
+% subplot(2,2,1);
+% imagesc(video(:,:,2,1));
+% for i = 1:size(found_walls)
+%     vline = line(found_walls(i,:), [1 numslices]);
+%     set(vline,'color','r');
+%     set(vline,'LineStyle','--');
+%     set(vline,'LineWidth',3);
+% end
+% title('Found capillary walls');
+% 
+% %% find walls using the capillary endpoints as a guide
+% subplot(2,2,3);
+% maxslice=600;
+% sino = squeeze(video(maxslice,:,2,:));
+% cap_peak_points = find_walls(double(sino), capillary_endpoints);
+% imagesc(sino);
+% hold on;
+% plot(cap_peak_points,'color','r','LineStyle',':','LineWidth',3);
+% hold off
+% view([-90 -90])
+% % what're the wall positions? 
 
-% draw the found capillary walls
-found_walls = capillary_endpoints(capillary_endpoints(:,3)==1,1:2);
-subplot(2,2,1);
-imagesc(video(:,:,2,1));
-for i = 1:size(found_walls)
-    vline = line(found_walls(i,:), [1 numslices]);
-    set(vline,'color','r');
-    set(vline,'LineStyle','--');
-    set(vline,'LineWidth',3);
-end
-title('Found capillary walls');
-
-%% find walls using the capillary endpoints as a guide
-subplot(2,2,3);
-maxslice=600;
-sino = squeeze(video(maxslice,:,2,:));
-cap_peak_points = find_walls(double(sino), capillary_endpoints);
-imagesc(sino);
-hold on;
-plot(cap_peak_points,'color','r','LineStyle',':','LineWidth',3);
-hold off
-view([-90 -90])
-% what're the wall positions? 
-edges = round(nanmedian(cap_peak_points)); 
 %%
 % v_complement = imcomplement(video);
 % myVideo = VideoWriter([VideoPath,VideoName(1:end-4),'_stabilised.mp4'],'MPEG-4');
@@ -176,7 +175,7 @@ edges = round(nanmedian(cap_peak_points));
 % close(myVideo);
 %% Reconstruct a slice
 ch = 2; %channel 2 is the green channel which has a mix of ISH and SYTOX
-slicenum = maxslice; % this is the slice with the highest intensity
+slicenum = 700; % this is the slice with the highest intensity
 subplot(2,2,1);
 imagesc(video(:,:,ch,1));
 hline = refline(0,slicenum);
@@ -189,14 +188,17 @@ line([edges(2) edges(2)],[1 numslices], 'color','r');
 angles = linspace(0,2*pi, numframes);
 
 sino = squeeze(video(slicenum,:,ch,:));
+sino(~imbinarize(sino))=0;
+% imagesc(sino)
 contract_borders_by = -20;
 leftedge = edges(1)+contract_borders_by;
 rightedge = edges(2)-contract_borders_by;
 plotresults = true;
 subplot(2,2,2);
-extra_offset = findCOR(sino, angles, leftedge,rightedge,0,'GDER',plotresults,gpuAvailable);
+extra_offset = findCOR(sino, angles, leftedge,rightedge,-140,'GDER',plotresults,gpuAvailable);
 fprintf('Optimised COR offset is %0.2f pixels\n',extra_offset);
-% extra_offset=0;%-14;
+
+extra_offset=extra_offset+0;
 % display this reconstruction
 contract_borders_by = -20;
 leftedge = edges(1)+contract_borders_by+extra_offset;
@@ -395,12 +397,7 @@ if cancelled==0 %okay let's do this
         clear dat
     end
 end
-%% Hard mask parts of the volume that aren't in the top-down mask
-max_mask_topdown = squeeze(max(mask,[],3));
-rec_masked = rec;
-for slicenum=1:numslices
-    rec_masked(:,:,:,slicenum) = imoverlay(rec(:,:,:,slicenum),~max_mask_topdown,[0 0 0]);
-end
+
 %%
 % m = squeeze(max(dat,[],1));
 % for ch=1:3
