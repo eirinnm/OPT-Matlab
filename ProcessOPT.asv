@@ -46,17 +46,21 @@ background = imread('background2018-04-12T17_33_59.bmp');
 % b = imread('background2018-02-23T16_38_32.bmp');
 % subtract the background. This will invert the brightness too
 video = (background - video);
-% How long is the revolution?
-frame_diffs = squeeze(sum(sum(abs(video(:,:,2,:) - video(:,:,2,1)))));
+%% How long is the revolution?
+frame_diffs = squeeze(sum(sum(abs(video(:,:,3,:) - video(:,:,3,1)))));
 [~, minidx] = min(frame_diffs(300:end));
 minidx = minidx + 300;
-fprintf("Estimated rotation length: %d frames\n",minidx);
-% clip the video
-video = video(:,:,:,1:minidx);
+plot(frame_diffs)
+frpint
+%%
+% clip the video to what I think are the best start and stop frames for
+% this machine
+video = video(:,:,:,1:358);
 numslices = size(video,1);
 image_width = size(video,2);
 numchannels = size(video,3);
 numframes = size(video,4);
+clear videodata
 f = figure;
 
 %% Find capillary walls
