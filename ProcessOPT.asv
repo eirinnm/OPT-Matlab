@@ -34,7 +34,7 @@ VideoName = VideoNames{V};
 if cancelled == 1
     break
 end
-%%
+%% Read video file and subtract the background.
 disp('Reading input video...');
 disp(VideoName);
 h = waitbar(0.33,'Loading video...');
@@ -42,31 +42,27 @@ video = read(VideoReader([VideoPath,VideoName]));
 close(h);
 % background = imread('background2018-02-23T16_38_32.bmp');
 background = imread('background2018-04-12T17_33_59.bmp');
-% background_frames = read(VideoReader([VideoPath,VideoName]));
-% b = imread('background2018-02-23T16_38_32.bmp');
 % subtract the background. This will invert the brightness too
 video = (background - video);
-%% How long is the revolution?
-frame_diffs = squeeze(sum(sum(abs(video(:,:,3,:) - video(:,:,3,1)))));
+% How long is the revolution? Find the frames with the least difference
+% from the first frame
+frame_diffs = squeeze(sum(sum(abs(video(:,:,2,:) - video(:,:,2,1)))));
 [~, minidx] = min(frame_diffs(300:end));
 minidx = minidx + 300;
-plot(frame_diffs)
-frpint
-%%
-% clip the video to what I think are the best start and stop frames for
-% this machine
-video = video(:,:,:,1:358);
+fprintf("Estimated rotation length: %d frames\n",minidx);
+% clip the video
+video = video(:,:,:,1:minidx);
 numslices = size(video,1);
 image_width = size(video,2);
 numchannels = size(video,3);
 numframes = size(video,4);
-clear videodata
+% create a figure to show progress
 f = figure;
 
 %% Find capillary walls
 [edges, cap_width_scalefactor] = find_cap_walls(squeeze(video(:,:,2,:)));
-%% Resize the video
-% vid_resized = squeeze(video(:,:,2,:));
+% Resize the video to normalise the capillary width
+
 h=waitbar(0,'Resizing video...');
 image_width = size(video,2);
 image_height = size(video,1);
@@ -87,7 +83,7 @@ for framenum = 1:numframes
     waitbar(framenum/numframes,h);
 end
 close(h);
-%% 
+%% Video stabilization
 subplot(2,2,1);
 imagesc(video(:,:,2,1));
 title('Frame 1');
@@ -100,8 +96,6 @@ title("Average sinogram");
 % difference (least squares)
 shift_by = stabilize_capillary(scanzones);
 shift_by = cumsum(shift_by);
-% shift_by = cumsum(shift_by_again);
-% scanzones = scanzones_fixed_1pass; %% TEMP
 scanzones_fixed = scanzones;
 for framenum = 1:numframes
     scanzones_fixed(:,framenum) = imtranslate(scanzones(:,framenum),[0 shift_by(framenum)],'linear');
@@ -116,20 +110,6 @@ subplot(2,2,3);
 imagesc(scanzones_fixed');
 title('Stabilized sinogram');
 %% Stabilize whole video
-
-% nz=find(min(scanzones_fixed,[],2));
-% scanzones_fixed = scanzones_fixed(min(nz):max(nz),:);
-% shift_by_again = stabilize_capillary(scanzones_fixed);
-% shift_by_again = cumsum(shift_by_again);
-% %%
-% scanzones_fixed_again = scanzones_fixed;
-% for framenum = 1:numframes
-%     scanzones_fixed_again(:,framenum) = imtranslate(scanzones_fixed(:,framenum),[0 shift_by_again(framenum)],'linear');
-% end
-% nz=find(min(scanzones_fixed_again,[],2));
-% scanzones_fixed = scanzones_fixed(min(nz):max(nz),:);
-% %%
-% apply this lateral shift to every frame in the video
 h=waitbar(0,'Stabilizing video...');
 for framenum = 1:numframes-1
     video(:,:,:,framenum) = imtranslate(video(:,:,:,framenum),[shift_by(framenum) 0 0],'linear');
@@ -139,43 +119,11 @@ end
 video = video(:,crop_left:crop_right,:,:);
 close(h);
 
-%% Find walls
+%% Find walls in the stabilized video
 [edges, cap_width_scalefactor] = find_cap_walls(squeeze(video(:,:,2,:)));
 % these edges will be used to crop and centre the sinogram prior to
 % reconstruction
-%%
-% capillary_endpoints = find_hough_points(squeeze(video(:,:,2,:)));
-% 
-% % draw the found capillary walls
-% found_walls = capillary_endpoints(capillary_endpoints(:,3)==1,1:2);
-% subplot(2,2,1);
-% imagesc(video(:,:,2,1));
-% for i = 1:size(found_walls)
-%     vline = line(found_walls(i,:), [1 numslices]);
-%     set(vline,'color','r');
-%     set(vline,'LineStyle','--');
-%     set(vline,'LineWidth',3);
-% end
-% title('Found capillary walls');
-% 
-% %% find walls using the capillary endpoints as a guide
-% subplot(2,2,3);
-% maxslice=600;
-% sino = squeeze(video(maxslice,:,2,:));
-% cap_peak_points = find_walls(double(sino), capillary_endpoints);
-% imagesc(sino);
-% hold on;
-% plot(cap_peak_points,'color','r','LineStyle',':','LineWidth',3);
-% hold off
-% view([-90 -90])
-% % what're the wall positions? 
 
-%%
-% v_complement = imcomplement(video);
-% myVideo = VideoWriter([VideoPath,VideoName(1:end-4),'_stabilised.mp4'],'MPEG-4');
-% open(myVideo);
-% writeVideo(myVideo,v_complement);
-% close(myVideo);
 %% Reconstruct a slice
 ch = 2; %channel 2 is the green channel which has a mix of ISH and SYTOX
 slicenum = 700; % this is the slice with the highest intensity
@@ -227,28 +175,6 @@ imagesc(rec_slice);
 title('Reconstructed slice');
 daspect([1 1 1]);
 
-
-
-%%
-%subplot(2,2,3);
-% 
-% fixed_sino = sino(edges(1)-50:edges(2)+50,:);
-% 
-% %downsample for speed
-% downsamplefactor = 2;
-% small_sino = imresize(fixed_sino, 1/downsamplefactor);
-% small_angles = decimate(angles,downsamplefactor);
-% tic;
-% rec_slice = reconstruct_from_sino(small_sino', small_angles,gpuAvailable);
-% elapsedTime = toc;
-% image_variance = var(rec_slice(:));
-% image_focus = fmeasure(rec_slice,'GDER');
-% fprintf('Reconstruction complete after %0.2f seconds.\nImage focus is %0.5f.\n',elapsedTime, image_focus);
-% rec_slice(rec_slice<0)=0;
-% subplot(2,2,4);
-% imagesc(rec_slice);
-% title('Reconstructed slice');
-% daspect([1 1 1]);
 %% Reconstruct all slices if it looks good
 clear Movie;
 framenum=1;
@@ -370,13 +296,9 @@ if cancelled==0 %okay let's do this
     else
         disp('Saving cropped volume...');
         h=waitbar(1,'Saving cropped volume to file...');
-        %whole_region = regionprops(fishmask);
-        %wholeBB3D = whole_region.BoundingBox; 
-        %BB = round(wholeBB3D);
-%         rec = views(BB(2):BB(2)+BB(5)-1,BB(1):BB(1)+BB(4)-1,BB(3):BB(3)+BB(6)-1,:);
-%         mask = fishmask(BB(2):BB(2)+BB(5)-1,BB(1):BB(1)+BB(4)-1,BB(3):BB(3)+BB(6)-1);
-        % the above approach (finding the biggest object in the 3d mask)
-        % didn't work that well. Instead let's just take a max through the
+        
+        %Crop the volume to the fish
+        % Let's just take a max through the
         % stack and find the biggest object there.
         max_mask_topdown = squeeze(max(fishmask,[],3));
         max_mask_props = regionprops(max_mask_topdown);
@@ -386,11 +308,6 @@ if cancelled==0 %okay let's do this
         mask = fishmask(BB(2):BB(2)+BB(4)-1, BB(1):BB(1)+BB(3)-1, :);
         save([VideoPath,VideoName(1:end-4),'_recon.mat'],'rec', 'mask','-v7.3');
         % Save the output to a TIFF stack
-        % permute it to get a side-view 
-%         dat = permute(rec, [1 4 2 3]);
-        % and then reshape it to interleave the
-        % colour channels (for ImageJ)
-%         dat = reshape(permute(rec, [3 1 4 2]), size(rec,3), size(rec,1), []);
         outputfilename = [VideoPath,VideoName(1:end-4),'_recon.tiff'];
         options.overwrite = true;
         options.color = true;
@@ -402,24 +319,6 @@ if cancelled==0 %okay let's do this
     end
 end
 
-%%
-% m = squeeze(max(dat,[],1));
-% for ch=1:3
-%     subplot(1,4,ch);
-%     imagesc(m(:,:,ch));
-%     daspect([1 1 1]);
-%     title(sprintf('Channel %d', ch));
-% end
-% subplot(1,4,4);
-% imagesc(imcomplement(histeq(m)));
-% daspect([1 1 1]);
-% title('Merge');
-%%
-% myVideo = VideoWriter([VideoPath,VideoName(1:end-4),'_reconanimation.mp4'],'MPEG-4');
-% myVideo.FrameRate=60;
-% open(myVideo);
-% writeVideo(myVideo,Movie(1:1024));
-% close(myVideo);
 end %% end the major loop through videos
 
 %% Attempt a 3d scatter plot render
