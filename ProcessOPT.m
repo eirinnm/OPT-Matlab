@@ -41,7 +41,7 @@ h = waitbar(0.33,'Loading video...');
 video = read(VideoReader([VideoPath,VideoName]));
 close(h);
 % background = imread('background2018-02-23T16_38_32.bmp');
-background = imread('background2018-04-12T17_33_59.bmp');
+background = imread('background2018-03-09T14_30_27.bmp');
 % subtract the background. This will invert the brightness too
 video = (background - video);
 % How long is the revolution? Find the frames with the least difference
@@ -61,7 +61,7 @@ f = figure;
 
 %% Find capillary walls
 [edges, cap_width_scalefactor] = find_cap_walls(squeeze(video(:,:,2,:)));
-% Resize the video to normalise the capillary width
+%% Resize the video to normalise the capillary width
 
 h=waitbar(0,'Resizing video...');
 image_width = size(video,2);
