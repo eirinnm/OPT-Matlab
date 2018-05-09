@@ -60,29 +60,12 @@ numframes = size(video,4);
 f = figure;
 
 %% Find capillary walls
-[edges, cap_width_scalefactor] = find_cap_walls(squeeze(video(:,:,2,:)));
-%% Resize the video to normalise the capillary width
+[~, cap_width_scalefactor, cap_peak_points] = find_cap_walls(squeeze(video(:,:,2,:)));
+% which frame has the capillary closest to the centre of the image?
+cap_mid_distance_to_centre = mean(cap_peak_points,2)-image_width/2;
+[~, closest_frame] = min(abs(cap_mid_distance_to_centre));
+initial_shift_by = cap_mid_distance_to_centre(closest_frame);
 
-h=waitbar(0,'Resizing video...');
-image_width = size(video,2);
-image_height = size(video,1);
-for framenum = 1:numframes
-    I = video(:,:,:,framenum);
-    newwidth =round(image_width*(cap_width_scalefactor(framenum)*-1+1));
-    offset_to_center = round((image_width - newwidth)/2);
-    Ir = imresize(I,[image_height newwidth]);
-    Ir = imtranslate(Ir,[offset_to_center 0]);
-    newwidth_int = floor(newwidth);
-    if newwidth_int<image_width
-        Ir = Ir(1:image_height,1:newwidth_int,:);
-        video(:,1:newwidth_int,:,framenum) = Ir;
-    else
-        Ir = Ir(1:image_height,1:image_width,:);
-        video(:,:,:,framenum) = Ir;
-    end
-    waitbar(framenum/numframes,h);
-end
-close(h);
 %% Video stabilization
 subplot(2,2,1);
 imagesc(video(:,:,2,1));
@@ -94,33 +77,68 @@ title("Average sinogram");
 
 % for each consecutive frame, find the lateral movement that minimizes the
 % difference (least squares)
-shift_by = stabilize_capillary(scanzones);
+shift_by = stabilize_capillary(scanzones, initial_shift_by, closest_frame);
 shift_by = cumsum(shift_by);
+%new: centre the shift amount to the position from the frame closest to the
+%middle of the image
+shift_by = shift_by-shift_by(closest_frame);%+initial_shift_by;
 scanzones_fixed = scanzones;
 for framenum = 1:numframes
     scanzones_fixed(:,framenum) = imtranslate(scanzones(:,framenum),[0 shift_by(framenum)],'linear');
 end
-% crop the fixed sinogram so there's no zeros
-nz=find(min(scanzones_fixed,[],2));
-crop_left = min(nz);
-crop_right= max(nz);
-scanzones_fixed = scanzones_fixed(crop_left:crop_right,:);
-%display the fixed sinogram so we can see that it makes sense
+%where do we think the capillary walls are now?
+adjusted_cap_walls = cap_peak_points + shift_by; 
+approx_cap_wall = round(mean(adjusted_cap_walls));
+% Note! Not adjusted for capillary width variance
 subplot(2,2,3);
-imagesc(scanzones_fixed');
+imagesc(scanzones_fixed);
 title('Stabilized sinogram');
-%% Stabilize whole video
-h=waitbar(0,'Stabilizing video...');
-for framenum = 1:numframes-1
-    video(:,:,:,framenum) = imtranslate(video(:,:,:,framenum),[shift_by(framenum) 0 0],'linear');
+hold on;
+plot(adjusted_cap_walls,'color','r','LineStyle',':','LineWidth',3);
+hold off
+view([-90 -90])
+
+%% Adjust the entire video
+% Resize the video horizontally so that the capillary is the same width in all frames.
+% Also shift the video horizontally to stabilise it.
+h=waitbar(0,'Stabilizing and centering video...');
+image_width = size(video,2);
+image_height = size(video,1);
+% video2 = video;
+for framenum = 1:numframes
+    I = video(:,:,:,framenum);
+    %find the desired width of this frame
+    newwidth = round(image_width*(cap_width_scalefactor(framenum)*-1+1));
+    %where is the new centre of that image in relation to the old centre?
+    offset_to_centre = round((image_width - newwidth)/2);
+    % We also need to move the video by the amount given in shift_by
+    offset_to_centre = offset_to_centre + shift_by(framenum);
+    % Actual transformations:
+    % resize the video (this will resize from the left side)
+    Ir = imresize(I,[image_height newwidth]);
+    % now shift it so it's in the centre
+    Ir = imtranslate(Ir,[offset_to_centre 0]);
+    % copy it back into the video matrix
+    newwidth_int = floor(newwidth);
+    if newwidth_int<image_width
+        Ir = Ir(1:image_height,1:newwidth_int,:);
+        video(:,1:newwidth_int,:,framenum) = Ir;
+    else
+        Ir = Ir(1:image_height,1:image_width,:);
+        video(:,:,:,framenum) = Ir;
+    end
     waitbar(framenum/numframes,h);
 end
-%crop the video to the stabilized region
-video = video(:,crop_left:crop_right,:,:);
 close(h);
 
-%% Find walls in the stabilized video
-[edges, cap_width_scalefactor] = find_cap_walls(squeeze(video(:,:,2,:)));
+%crop the video to the stabilized region
+%note: this will crash if the cap walls are closer than 50px from the image
+%edge
+crop_left = approx_cap_wall(1)-50;
+crop_right = approx_cap_wall(2)+50;
+video = video(:,crop_left:crop_right,:,:);
+% Find walls in the stabilized video
+[edges, cap_width_scalefactor, cap_peak_points] = find_cap_walls(squeeze(video(:,:,2,:)));
 % these edges will be used to crop and centre the sinogram prior to
 % reconstruction
 

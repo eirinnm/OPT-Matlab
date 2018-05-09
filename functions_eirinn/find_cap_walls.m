@@ -1,4 +1,4 @@
-function [ edges, cap_width_scalefactor ] = find_cap_walls(vid_data)
+function [ edges, cap_width_scalefactor, cap_peak_points ] = find_cap_walls(vid_data)
 numslices = size(vid_data,1);
 capillary_endpoints = find_hough_points(vid_data);
 % draw the found capillary walls

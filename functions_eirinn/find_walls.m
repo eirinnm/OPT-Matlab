@@ -31,7 +31,7 @@ mean_found_peaks = round(size(good_peaks,1)/numframes);
 % which of these clustered peaks are closest to the centre of the image?
 peak_distances = image_width/2 - peak_centres;%
 peak_distances(:,2) = peak_distances>0;
-peak_distances(:,3) = 1:3;
+peak_distances(:,3) = 1:mean_found_peaks;
 left_peaks = peak_distances(peak_distances(:,2)==1,:);
 [~, idx] = min(abs(left_peaks(:,1)));
 left_peak_idx = left_peaks(idx,3);

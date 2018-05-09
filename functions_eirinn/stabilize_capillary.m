@@ -1,7 +1,7 @@
-function [ shift_by ] = stabilize_capillary(scanzones)
+function [ shift_by ] = stabilize_capillary(scanzones, initial_shift_by, closest_frame)
 %%% Steps through lines of the "scanzone" (sinogram of all slices) and
 %%% calculates horizontal pixel offsets that minimizes the difference. 
-
+%%% New: start at the frame where the capillary is closest to the middle.
     function [fval] = shift_compare(x)
         translated = imtranslate(scanline_next,[0 x],'linear');
         translated(translated==0) = nan;
@@ -9,14 +9,10 @@ function [ shift_by ] = stabilize_capillary(scanzones)
     end
     numframes = size(scanzones,2);
     shift_by = zeros(numframes,1);
-%     shift_by = NaN(numframes,1);
-%     options = optimset('TolX',0.1,'TolFun',0.1,'Display','iter');
     h=waitbar(0,'Measuring capillary movement...');
-    scansize=4;
+    scansize=4; %we actually look at every 4th frame
     for framenum = 1:scansize:numframes-scansize
-%         framenum = 361;
         scanline = scanzones(:,framenum);
-%         scanline = scanzones(:,150);
         scanline_next = scanzones(:,framenum+scansize);
         test_shifts = -10:10;
         shift_results = arrayfun(@shift_compare, test_shifts);
@@ -28,8 +24,6 @@ function [ shift_by ] = stabilize_capillary(scanzones)
     end
     close(h);
     
-%%% Pixel offsets are in whole-pixel units which means rounding errors
-%%% accumulate over time. Run a second pass on every 4th row
 end
 
 
