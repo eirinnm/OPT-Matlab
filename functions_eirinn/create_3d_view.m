@@ -1,6 +1,7 @@
 %% Hard mask parts of the volume that aren't in the top-down mask
 max_mask_topdown = squeeze(max(mask,[],3));
 rec_masked = rec;
+numslices = size(rec_masked,4);
 for slicenum=1:numslices
     rec_masked(:,:,:,slicenum) = imoverlay(rec(:,:,:,slicenum),~max_mask_topdown,[0 0 0]);
 end
@@ -13,17 +14,19 @@ scalefactor3d = 0.25;
 small_ch1 = (imresize3(squeeze(rec_masked(:,:,1,:)),scalefactor3d));
 small_ch2 = (imresize3(squeeze(rec_masked(:,:,2,:)),scalefactor3d));
 small_ch3 = (imresize3(squeeze(rec_masked(:,:,3,:)),scalefactor3d));
-% small_linear = cat(2,small_ch1(:), small_ch2(:), small_ch3(:));
+
 %%
 % % Scatter3
-% msk = find(small_linear(:,1)>50);
-% pixels = small_linear(msk,:);
-% pixels = histeq(pixels);
-% [xx,yy,zz] = ind2sub(size(small_ch1),msk);
-% scatter3(xx,yy,zz,6,'Marker','*','MarkerEdgeAlpha',0.1,'CData',pixels,'MarkerEdgeColor','flat','MarkerFaceColor','none');
-% axis vis3d
-% daspect([1,1,1]);
-% view(10,10);
+% small_linear = cat(2,small_ch1(:), small_ch2(:), small_ch3(:));
+small_linear = small_ch1(:);
+msk = find(small_linear(:,1)>50);
+pixels = small_linear(msk,:);
+pixels = histeq(pixels);
+[xx,yy,zz] = ind2sub(size(small_ch1),msk);
+scatter3(xx,yy,zz,6,'Marker','*','MarkerEdgeAlpha',0.1,'CData',pixels,'MarkerEdgeColor','flat','MarkerFaceColor','none');
+axis vis3d
+daspect([1,1,1]);
+view(10,10);
 % D = imresize3(meanrec,0.25);
 % Ds = smooth3(small_ch1);
 % clear meanrec
